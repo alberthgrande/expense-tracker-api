@@ -34,12 +34,86 @@ export const login = async (req: Request, res: Response) => {
     if (!isMatch)
       return res.status(400).json({ message: "Invalid credentials" });
 
-    const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
-      expiresIn: "1h",
+    const accessToken = jwt.sign({ userId: user._id }, JWT_SECRET, {
+      expiresIn: "15m",
+    });
+    const refreshToken = jwt.sign({ userId: user._id }, JWT_SECRET, {
+      expiresIn: "7d",
     });
 
-    res.status(200).json(token);
+    user.refreshToken = refreshToken;
+
+    await user.save();
+
+    res
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      })
+      .status(200)
+      .json({ accessToken });
   } catch (error) {
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const logout = async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email });
+
+  if (user) {
+    user.refreshToken = "";
+
+    await user.save();
+  }
+
+  res
+    .clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    })
+    .status(200)
+    .json({ message: "Logged out" });
+};
+
+export const refreshToken = async (req: Request, res: Response) => {
+  const { token } = req.body;
+
+  if (!token) return res.status(401).json({ message: "No token provided" });
+
+  try {
+    const decode = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const user = await User.findById(decode.userId);
+
+    if (!user || user.refreshToken !== token) {
+      return res.status(403).json({ message: "Invalid refresh token" });
+    }
+
+    const newAccessToken = jwt.sign({ userId: user._id }, JWT_SECRET, {
+      expiresIn: "15m",
+    });
+    const newRefreshToken = jwt.sign({ userId: user._id }, JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    user.refreshToken = newRefreshToken;
+
+    await user.save();
+
+    res
+      .cookie("refreshToken", newRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      })
+      .status(200)
+      .json({ accessToken: newAccessToken });
+  } catch (error) {
+    return res.status(403).json({ message: "Invalid refresh token" });
   }
 };
