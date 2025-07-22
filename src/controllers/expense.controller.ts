@@ -30,21 +30,40 @@ export const addExpense = async (req: AuthRequest, res: Response) => {
 // get expense
 export const getExpense = async (req: AuthRequest, res: Response) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, filter } = req.query;
     const query: any = { userId: req.user };
 
-    if (from || to) {
+    let startDate: Date | undefined;
+    let endDate: Date | undefined = new Date();
+
+    switch (filter) {
+      case "week":
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case "month":
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case "3months":
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+    }
+
+    if (from) startDate = new Date(from as string);
+    if (to) endDate = new Date(to as string);
+
+    if (startDate || endDate) {
       query.date = {};
-
-      if (from) query.date.$gte = new Date(from as string);
-
-      if (to) query.date.$lte = new Date(to as string);
+      if (startDate) query.date.$gte = startDate;
+      if (endDate) query.date.$lte = endDate;
     }
 
     const expenses = await Expense.find(query).sort({ date: -1 });
     res.status(200).json(expenses);
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
   }
 };
 
